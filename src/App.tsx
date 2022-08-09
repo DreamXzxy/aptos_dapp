@@ -1,36 +1,20 @@
-import React from 'react';
+import React, { useReducer } from 'react';
 import './App.css';
 import { Types, AptosClient, TxnBuilderTypes, AptosAccount } from 'aptos';
 import { Buffer } from "buffer"
-require('dotenv').config({ path: '.env' })
+import { SetMessage, toHex } from './message';
+import {useAptos} from "./hooks/aptos";
+import { aptosReducer } from './lib/contexts/AptosContext';
 
 // Create an AptosClient to interact with devnet.
 const client = new AptosClient('https://fullnode.devnet.aptoslabs.com');
-const privateKey = process.env.PRIVATEKEY;
-console.log(privateKey, "privateKey");
-
-/** Convert string to hex-encoded utf-8 bytes. */
-function stringToHex(text: string) {
-  const encoder = new TextEncoder();
-  const encoded = encoder.encode(text);
-  return Array.from(encoded, (i) => i.toString(16).padStart(2, "0")).join("");
-}
-
-function stringToUint8Array(str: string){
-  var arr = [];
-  for (var i = 0, j = str.length; i < j; ++i) {
-    arr.push(str.charCodeAt(i));
-  }
- 
-  var tmpUint8Array = new Uint8Array(arr);
-  return tmpUint8Array
-}
 
 function App() {
   // Retrieve aptos.account on initial render and store it.
   const urlAddress = window.location.pathname.slice(1);
   const isEditable = !urlAddress;
   const [address, setAddress] = React.useState<string | null>(null);
+
   React.useEffect(() => {
     if (urlAddress) {
       setAddress(urlAddress);
@@ -45,10 +29,6 @@ function App() {
     if (!address) return;
     client.getAccount(address).then(setAccount);
   }, [address]);
-
-  const privateKeyBuffer = Buffer.from(privateKey, 'hex')
-  const account1 = new AptosAccount(privateKeyBuffer);
-  console.log(account1.address(), "account1");
 
   // Check for the module; show publish instructions if not present.
   const [modules, setModules] = React.useState<Types.MoveModuleBytecode[]>([]);
@@ -78,10 +58,9 @@ function App() {
     const transaction = {
       type: "script_function_payload",
       function: "0x33c8840298b3f75cfbe37ac11051ba7085b65bbc074937624114cfad8d4d5113::Message::set_message",
-      arguments: [stringToHex(message)],
+      arguments: [toHex(message)],
       type_arguments: [],
     };
-    console.log(transaction, "transaction");
 
     try {
       setIsSaving(true);
@@ -99,49 +78,45 @@ function App() {
     client.getAccountResources(address).then(setResources);
   }, [address]);
   const resourceType = `${address}::Message::MessageHolder`;
-  const resourcea = resources.map((r) => r.type.address);
-  const resourceg = resources.map((r) => r.type.generic_type_params);
-  const resourcem = resources.map((r) => r.type.module);
-  const resourcen = resources.map((r) => r.type.name);
-  console.log(resourcea, resourceg, resourcem, resourcen);
   const resource = resources.find((r) => r.type.toString() === resourceType);
   const data = resource?.data as {message: string} | undefined;
   const message = data?.message;
 
-  async function createTx() {
+  const aptos = useAptos();
+
+  React.useEffect(() => {
+    aptos.updateAccount().catch(console.error)
+  }, [aptos]);
+
+  const CreateAccountA = async () => {
     try {
-      const messageTransferFunction = {
-        module: {
-          address: `${account1.address()}`,
-          name: "Message",
-        },
-        name: "set_message",
-      };
-      const payload: Types.TransactionPayload = {
-        type: "script_function_payload",
-        function: messageTransferFunction,
-        type_arguments: [],
-        arguments: [stringToHex("coool")],
-      };
-      console.log(account1.address());
-      console.log(payload, "payload");
-      const txnRequest = await client.generateTransaction(account1.address(), payload);
-      console.log(txnRequest, "txnRequest");
-      if (!account) {
-        return;
-      } else {
-        const transactionRes = (await client.simulateTransaction(account1, txnRequest))[0];
-        console.log(transactionRes, "transactionRes");
-      }
-    } finally {
-      setIsSaving(false);
+      await SetMessage("0xd33a8f77a8b28d34a930b9eeb9d923aa90324f4d9e1e796a94459289d53ee4a6", "PUBLISHER");
+    } catch (e) {
+      console.log(e);
+      window.alert(e);
+      return
     }
+    await aptos.updateAccount()
+    console.log("success");
   }
 
   return (
     <div className="App">
-      <button className="button" onClick={createTx} disabled={false}>
+      <p>Address: {aptos.account?.address}</p>
+      <button className="button" onClick={CreateAccountA} disabled={false}>
         Create Tx
+      </button>
+      <button
+          className="px-4 py-2 bg-gray-100 hover:bg-gray-300 duration-300 rounded-md my-auto ml-auto mr-4"
+          onClick={aptos.disconnect}
+      >
+          解除连接
+      </button>
+      <button
+          className={"px-4 py-2 bg-indigo-500 text-white rounded-md"}
+          onClick={aptos.connect}
+      >
+          连接钱包
       </button>
       {hasModule ? (
         <form onSubmit={handleSubmit}>
